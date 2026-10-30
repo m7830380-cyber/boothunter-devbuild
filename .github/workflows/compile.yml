@@ -1,4 +1,4 @@
-name: Compile Ren'Py Dev Build
+name: Compile Dev Build (targeted)
 
 on:
   workflow_dispatch: {}
@@ -13,35 +13,46 @@ jobs:
           tar xjf renpy_sdk.tar.bz2
           ls | grep renpy
 
-      - name: Download game folder
+      - name: Download game folder (original, untouched .rpyc)
         run: |
           wget -q "https://github.com/${{ github.repository }}/releases/download/game-v1/colab_game.zip" -O colab_game.zip
           mkdir -p gamebuild
           cd gamebuild && unzip -q ../colab_game.zip
           mv colab_game game
-          ls game
+          ls game/scripts/Classes | grep -E "membership|developer"
 
-      - name: Compile with real Ren'Py SDK
+      - name: Build minimal project with ONLY our 2 edited files
+        run: |
+          mkdir -p minimal/game/scripts/Classes
+          cp gamebuild/game/scripts/Classes/00_membershipInstallation.rpy minimal/game/scripts/Classes/
+          cp gamebuild/game/scripts/Classes/99_developer_override.rpy minimal/game/scripts/Classes/
+          ls -la minimal/game/scripts/Classes/
+
+      - name: Compile ONLY those 2 files with real Ren'Py SDK
         run: |
           SDK_DIR=$(ls -d renpy-*-sdk)
           chmod +x "$SDK_DIR/renpy.sh" "$SDK_DIR/lib/py3-linux-x86_64/python" || true
-          "$SDK_DIR/renpy.sh" "$GITHUB_WORKSPACE/gamebuild" compile
+          "$SDK_DIR/renpy.sh" "$GITHUB_WORKSPACE/minimal" compile
 
-      - name: Sanity check compiled files
+      - name: Verify compiled output
         run: |
-          MI=gamebuild/game/scripts/Classes/00_membershipInstallation.rpyc
-          DO=gamebuild/game/scripts/Classes/99_developer_override.rpyc
-          echo "membershipInstallation.rpyc:"; ls -la "$MI" || echo "MISSING"
-          echo "developer_override.rpyc:"; ls -la "$DO" || echo "MISSING"
-          echo "--- log.txt (if any) ---"
-          cat gamebuild/game/log.txt 2>/dev/null | tail -60 || true
+          MI=minimal/game/scripts/Classes/00_membershipInstallation.rpyc
+          DO=minimal/game/scripts/Classes/99_developer_override.rpyc
+          ls -la "$MI" "$DO"
           test -f "$MI"
           test -f "$DO"
+
+      - name: Splice compiled .rpyc into the ORIGINAL untouched game folder
+        run: |
+          cp minimal/game/scripts/Classes/00_membershipInstallation.rpyc gamebuild/game/scripts/Classes/
+          cp minimal/game/scripts/Classes/99_developer_override.rpyc gamebuild/game/scripts/Classes/
+          echo "--- Classes folder now ---"
+          ls gamebuild/game/scripts/Classes | grep -E "membership|developer"
 
       - name: Clone rpatool
         run: git clone -q https://github.com/Shizmob/rpatool.git rpatool
 
-      - name: Repackage into 0script.rpa
+      - name: Repackage into 0script.rpa (everything original + our 2 new rpyc)
         run: |
           cd gamebuild/game
           python3 "$GITHUB_WORKSPACE/rpatool/rpatool" -c "$GITHUB_WORKSPACE/0script.rpa" .
